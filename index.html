@@ -1,12 +1,116 @@
 <!DOCTYPE html>
-<html><head><style>body {
-font-family: 'Roboto', sans-serif;
-}</style></head><body><h2>Hi there!</h2>
-<h1>I am Qiuhuang</h1><h3>(秋煌)</h3>
-<p></p><div>
-    <img height="150em" src="https://github-readme-stats.vercel.app/api?username=ChQiuHuang&amp;count_private=true&amp;show_icons=true&amp;theme=vue-dark&amp;include_all_commits=true&amp;hide=stars">
-    <img height="150em" src="https://github-readme-stats.vercel.app/api/top-langs/?username=ChQiuHuang&amp;layout=compact&amp;theme=vue-dark">
-    <img height="150em" src="https://github-readme-streak-stats.herokuapp.com/?user=ChQiuHuang&amp;layout=compact&amp;theme=vue-dark">
-</div><br><p></p>
-</body></html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>個人檔案</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Add Material Design Icons for Google -->
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- Add MD3 style -->
+    <link href="https://cdn.jsdelivr.net/npm/@material/web@latest/dist/material/web.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white flex flex-col items-center justify-center min-h-screen p-6">
 
+    <!-- Top Toolbar with Globe Icon (MD3 style, Round button) -->
+    <div class="absolute top-4 right-4">
+        <button id="btn-lang" class="md3-icon-button text-3xl text-white bg-gray-800 p-3 rounded-full shadow-lg hover:bg-gray-700 focus:outline-none">
+            <span class="material-icons">language</span> <!-- Material Design Globe Icon -->
+        </button>
+    </div>
+
+    <div class="text-center mt-16">
+        <img src="https://lh3.googleusercontent.com/a/ACg8ocILnarAxNR5Z3BR20OXhaUhpPfvCR_LFKMUwTHlL4QmEY0ByEQg=s288-c-no" 
+             class="w-24 h-24 rounded-lg mx-auto shadow-md border-2 border-gray-700">
+
+        <h2 class="text-6xl font-semibold text-gray-300 mt-4" id="greeting">你好！</h2>
+        <h1 class="text-4xl font-bold text-blue-400 flex items-center justify-center gap-2" id="name">
+            我是 秋煌 <span class="text-gray-400 text-3xl" >(Qiuhuang)</span>
+        </h1>
+    </div>
+
+    <div class="mt-8 w-full max-w-4xl">
+        <h2 class="text-3xl font-semibold text-blue-300 text-center mb-4" id="pin-title">📌 作品</h2>
+
+        <div id="repo-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        </div>
+    </div>
+
+    <script>
+        let currentLang = "zh"; 
+        const apiUrls = {
+            en: "https://getpantry.cloud/apiv1/pantry/dd9b1690-a702-4a1f-908a-9fb8d77614aa/basket/Eng-sync",
+            zh: "https://getpantry.cloud/apiv1/pantry/dd9b1690-a702-4a1f-908a-9fb8d77614aa/basket/patha"
+        };
+
+        const translatedText = {
+            en: {
+                greeting: "Hi there!",
+                pinTitle: "📌 Projects",
+                language: "language",
+                name: "I am Qiuhuang <span class=\"text-gray-400 text-3xl\">(秋煌)</span>"
+            },
+            zh: {
+                greeting: "你好！",
+                pinTitle: "📌 作品",
+                language: "語言",
+                name: "我是 秋煌 <span class=\"text-gray-400 text-3xl\">(Qiuhuang)</span>"
+            }
+        };
+
+        function setLanguage(language) {
+            currentLang = language;
+            updateUI();
+            fetchPinnedRepos(language);
+        }
+
+        function updateUI() {
+            const greeting = document.getElementById("greeting");
+            const pinTitle = document.getElementById("pin-title");
+            const name = document.getElementById("name");
+
+            greeting.innerHTML = translatedText[currentLang].greeting;
+            pinTitle.innerHTML = translatedText[currentLang].pinTitle;
+
+            name.innerHTML = translatedText[currentLang].name;
+        }
+
+        async function fetchPinnedRepos(language) {
+            try {
+                const response = await fetch(apiUrls[language]);
+                const data = await response.json();
+
+                const repoContainer = document.getElementById("repo-list");
+                repoContainer.innerHTML = ""; 
+
+                for (const [repoName, details] of Object.entries(data)) {
+                    const repoElement = document.createElement("div");
+                    repoElement.className = "bg-gray-800 p-4 rounded-lg shadow-lg";
+
+                    repoElement.innerHTML = `
+                        <h3 class="text-xl font-semibold text-blue-300">${repoName}</h3>
+                        <p class="text-gray-400">${currentLang === 'en' ? 'Language' : '程式語言'}：${details.Language}</p>
+                        <p class="text-gray-400">${currentLang === 'en' ? 'Progress' : '進度'}：${details.Progress}</p>
+                        <a href="${details['Git Address']}" target="_blank" class="text-blue-400 underline">${currentLang === 'en' ? 'GitHub Repository' : 'GitHub 儲存庫'}</a>
+                    `;
+
+                    repoContainer.appendChild(repoElement);
+                }
+            } catch (error) {
+                console.error("無法獲取固定存儲庫：", error);
+            }
+        }
+
+        fetchPinnedRepos("zh");
+
+        document.getElementById("btn-lang").addEventListener("click", () => {
+            if (currentLang === "en") {
+                setLanguage("zh");
+            } else {
+                setLanguage("en");
+            }
+        });
+    </script>
+
+</body>
+</html>
