@@ -5,24 +5,6 @@
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
     Write-Host "需要管理員權限，請以管理員身份運行 PowerShell" -ForegroundColor Yellow
     
-    # 創建一個臨時腳本文件
-    $tempScript = [System.IO.Path]::GetTempFileName() + ".ps1"
-    $scriptContent = @'
-# 獲取當前腳本的內容并重新運行
-$webContent = Invoke-WebRequest -Uri "https://qiuhuang.dev/ublock.ps1" -UseBasicParsing
-$scriptContent = $webContent.Content
-# 保存到臨時文件
-$tempFile = [System.IO.Path]::GetTempFileName() + ".ps1"
-Set-Content -Path $tempFile -Value $scriptContent -Encoding Unicode
-# 以管理員身份運行
-Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$tempFile`"" -Verb RunAs
-'@
-    Set-Content -Path $tempScript -Value $scriptContent -Encoding Unicode
-    
-    # 啟動新的進程
-    Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
-    exit
-}
 
 Write-Host "正在安裝 uBlock Origin..." -ForegroundColor Cyan
 
