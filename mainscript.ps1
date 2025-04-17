@@ -1,10 +1,6 @@
 # uBlock Origin 安裝腳本 - 兼容 IEX 調用
 # 解決中文編碼問題
 
-# 確保以管理員身份運行
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "需要管理員權限，請以管理員身份運行 PowerShell" -ForegroundColor Yellow
-    
 
 Write-Host "正在安裝 uBlock Origin..." -ForegroundColor Cyan
 
