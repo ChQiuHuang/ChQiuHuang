@@ -159,3 +159,4 @@ if ($chromePath) {
 
 Write-Host "`nuBlock Origin 安裝完成！" -ForegroundColor Green
 Write-Host "若 Chrome 有更新，可能需要重新執行此腳本" -ForegroundColor Yellow
+pause
