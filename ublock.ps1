@@ -1,9 +1,30 @@
-# 確保使用者是以管理員身份執行
+# uBlock Origin 安裝腳本 - 兼容 IEX 調用
+# 解決中文編碼問題
+
+# 確保以管理員身份運行
 if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Host "正在以管理員身份重新啟動..." -ForegroundColor Yellow
-    Start-Process powershell "-ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    Write-Host "需要管理員權限，請以管理員身份運行 PowerShell" -ForegroundColor Yellow
+    
+    # 創建一個臨時腳本文件
+    $tempScript = [System.IO.Path]::GetTempFileName() + ".ps1"
+    $scriptContent = @'
+# 獲取當前腳本的內容并重新運行
+$webContent = Invoke-WebRequest -Uri "https://qiuhuang.dev/ublock.ps1" -UseBasicParsing
+$scriptContent = $webContent.Content
+# 保存到臨時文件
+$tempFile = [System.IO.Path]::GetTempFileName() + ".ps1"
+Set-Content -Path $tempFile -Value $scriptContent -Encoding Unicode
+# 以管理員身份運行
+Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$tempFile`"" -Verb RunAs
+'@
+    Set-Content -Path $tempScript -Value $scriptContent -Encoding Unicode
+    
+    # 啟動新的進程
+    Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
     exit
 }
+
+Write-Host "正在安裝 uBlock Origin..." -ForegroundColor Cyan
 
 # 設定常數
 $version = "1.63.3b16"
@@ -14,19 +35,19 @@ $zipPath = "$env:TEMP\uBlock0.zip"
 # 下載並解壓 uBlock Origin
 Write-Host "正在下載 uBlock Origin..." -ForegroundColor Yellow
 if (-not (Test-Path $extensionFolder)) {
-    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath
+    Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
     Write-Host "正在解壓..." -ForegroundColor Yellow
     Expand-Archive -LiteralPath $zipPath -DestinationPath $env:LOCALAPPDATA -Force
     Remove-Item $zipPath -Force
 }
 
-# 獲取擴充功能 ID (從 manifest.json)
+# 獲取擴充功能 ID
 $manifestPath = "$extensionFolder\manifest.json"
 if (-not (Test-Path $manifestPath)) {
-    Write-Host "無法找到 manifest.json，請確認擴充功能是否正確解壓。" -ForegroundColor Red
+    Write-Host "無法找到 manifest.json" -ForegroundColor Red
     exit
 }
-$manifest = Get-Content $manifestPath -Encoding UTF8 | ConvertFrom-Json
+$manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
 $extensionId = if ($manifest.id) { $manifest.id } else { $manifest.version }
 
 # 設定 Chrome 的擴充功能強制安裝政策
@@ -40,86 +61,58 @@ if (-not (Test-Path $regPath)) {
 Set-ItemProperty -Path $regPath -Name "1" -Value "$extensionId;file:///$($extensionFolder.Replace('\','/'))" -Force
 Write-Host "已設定強制安裝擴充功能政策" -ForegroundColor Green
 
-# 找出所有 Chrome 配置目錄
-Write-Host "尋找 Chrome 用戶配置..." -ForegroundColor Yellow
-$chromeUserDataPath = "$env:LOCALAPPDATA\Google\Chrome\User Data"
-$defaultProfiles = @("Default", "Profile 1", "Profile 2", "Profile 3")
-$profileDirs = @()
-
-# 檢查默認配置文件
-foreach ($profile in $defaultProfiles) {
-    $profilePath = Join-Path -Path $chromeUserDataPath -ChildPath $profile
-    if (Test-Path $profilePath) {
-        $profileDirs += $profilePath
-    }
-}
-
-# 檢查所有自定義配置文件
-if (Test-Path $chromeUserDataPath) {
-    Get-ChildItem -Path $chromeUserDataPath -Directory | ForEach-Object {
-        if ($_.Name -notmatch '^(Default|Profile \d+|System Profile|Guest Profile|.+Cache.*)$' -and 
-            $_.Name -notmatch '^(Crashpad|GrShaderCache|ShaderCache)$') {
-            $profileDirs += $_.FullName
-        }
-    }
-}
-
-# 設定每個配置文件的 Local State 檔案
-foreach ($profileDir in $profileDirs) {
-    $localStatePath = "$chromeUserDataPath\Local State"
+# 設定 Chrome 實驗性功能旗標
+$localStatePath = "$env:LOCALAPPDATA\Google\Chrome\User Data\Local State"
+if (Test-Path $localStatePath) {
+    Write-Host "更新 Chrome 實驗性功能旗標..." -ForegroundColor Yellow
     
-    if (Test-Path $localStatePath) {
-        Write-Host "更新 Chrome 實驗性功能旗標 (適用於所有配置)..." -ForegroundColor Yellow
+    try {
+        # 讀取 Local State 檔案
+        $json = Get-Content $localStatePath -Raw | ConvertFrom-Json
         
-        try {
-            # 讀取 Local State 檔案
-            $json = Get-Content $localStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
-            
-            # 確保必要的屬性存在
-            if (-not $json.browser) {
-                $json | Add-Member -MemberType NoteProperty -Name "browser" -Value @{}
-            }
-            if (-not $json.browser.enabled_labs_experiments) {
-                $json.browser | Add-Member -MemberType NoteProperty -Name "enabled_labs_experiments" -Value @()
-            }
-            
-            # 要啟用的旗標
-            $flagsToEnable = @(
-                "allow-legacy-mv2-extensions"   # 啟用舊版 Manifest V2 擴充
-            )
-            
-            # 要禁用的旗標
-            $flagsToDisable = @(
-                "extension-manifest-v2-deprecation-warning@2",
-                "extension-manifest-v2-deprecation-disabled@2",
-                "extension-manifest-v2-deprecation-unsupported@2"
-            )
-            
-            # 更新旗標列表
-            $existingFlags = $json.browser.enabled_labs_experiments
-            
-            # 移除可能存在的衝突旗標
-            foreach ($flag in $flagsToEnable) {
-                $existingFlags = $existingFlags | Where-Object { $_ -notmatch "^$flag(@.*)?$" }
-            }
-            foreach ($flag in $flagsToDisable) {
-                $baseFlag = $flag.Split("@")[0]
-                $existingFlags = $existingFlags | Where-Object { $_ -notmatch "^$baseFlag(@.*)?$" }
-            }
-            
-            # 添加新旗標
-            $existingFlags += $flagsToEnable
-            $existingFlags += $flagsToDisable
-            $json.browser.enabled_labs_experiments = $existingFlags | Sort-Object -Unique
-            
-            # 儲存更新後的 Local State 檔案
-            $json | ConvertTo-Json -Depth 100 | Set-Content -Path $localStatePath -Encoding UTF8
-            Write-Host "Chrome 全局實驗旗標設定完成！" -ForegroundColor Green
+        # 確保必要的屬性存在
+        if (-not $json.browser) {
+            $json | Add-Member -MemberType NoteProperty -Name "browser" -Value @{}
         }
-        catch {
-            Write-Host "處理 Local State 文件時發生錯誤: $_" -ForegroundColor Red
+        if (-not $json.browser.enabled_labs_experiments) {
+            $json.browser | Add-Member -MemberType NoteProperty -Name "enabled_labs_experiments" -Value @()
         }
-        break  # 只需要處理一次 Local State 文件，它是全局的
+        
+        # 要啟用的旗標
+        $flagsToEnable = @(
+            "allow-legacy-mv2-extensions"   # 啟用舊版 Manifest V2 擴充
+        )
+        
+        # 要禁用的旗標
+        $flagsToDisable = @(
+            "extension-manifest-v2-deprecation-warning@2",
+            "extension-manifest-v2-deprecation-disabled@2",
+            "extension-manifest-v2-deprecation-unsupported@2"
+        )
+        
+        # 更新旗標列表
+        $existingFlags = $json.browser.enabled_labs_experiments
+        
+        # 移除可能存在的衝突旗標
+        foreach ($flag in $flagsToEnable) {
+            $existingFlags = $existingFlags | Where-Object { $_ -notmatch "^$flag(@.*)?$" }
+        }
+        foreach ($flag in $flagsToDisable) {
+            $baseFlag = $flag.Split("@")[0]
+            $existingFlags = $existingFlags | Where-Object { $_ -notmatch "^$baseFlag(@.*)?$" }
+        }
+        
+        # 添加新旗標
+        $existingFlags += $flagsToEnable
+        $existingFlags += $flagsToDisable
+        $json.browser.enabled_labs_experiments = $existingFlags | Sort-Object -Unique
+        
+        # 儲存更新後的 Local State 檔案
+        $json | ConvertTo-Json -Depth 100 | Set-Content -Path $localStatePath
+        Write-Host "Chrome 實驗旗標設定完成" -ForegroundColor Green
+    }
+    catch {
+        Write-Host "處理 Local State 文件時發生錯誤: $_" -ForegroundColor Red
     }
 }
 
@@ -133,13 +126,12 @@ $possibleShortcutPaths = @(
 $shortcutUpdated = $false
 foreach ($chromeShortcutPath in $possibleShortcutPaths) {
     if (Test-Path $chromeShortcutPath) {
-        Write-Host "更新 Chrome 快捷方式 ($chromeShortcutPath)..." -ForegroundColor Yellow
+        Write-Host "更新 Chrome 快捷方式..." -ForegroundColor Yellow
         $chromeFlags = "--enable-features=AllowLegacyExtensionManifestV2 --disable-features=ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationDisabled,ExtensionManifestV2DeprecationUnsupported"
         
         try {
             $wsh = New-Object -ComObject WScript.Shell
             $shortcut = $wsh.CreateShortcut($chromeShortcutPath)
-            $targetPath = $shortcut.TargetPath
             $originalArgs = $shortcut.Arguments
             
             # 保留原有參數並添加新的參數
@@ -147,20 +139,13 @@ foreach ($chromeShortcutPath in $possibleShortcutPaths) {
                 $shortcut.Arguments = "$originalArgs $chromeFlags".Trim()
                 $shortcut.Save()
                 $shortcutUpdated = $true
-                Write-Host "已更新快捷方式: $chromeShortcutPath" -ForegroundColor Green
-            }
-            else {
-                Write-Host "快捷方式已包含需要的參數，無需更新" -ForegroundColor Yellow
+                Write-Host "已更新快捷方式" -ForegroundColor Green
             }
         }
         catch {
-            Write-Host "更新快捷方式 $chromeShortcutPath 時發生錯誤: $_" -ForegroundColor Red
+            Write-Host "更新快捷方式時發生錯誤: $_" -ForegroundColor Red
         }
     }
-}
-
-if (-not $shortcutUpdated) {
-    Write-Host "未找到 Chrome 快捷方式，請手動設置啟動參數" -ForegroundColor Yellow
 }
 
 # 找出 Chrome 安裝路徑
@@ -191,8 +176,8 @@ if ($chromePath) {
     $launchArgs = "--load-extension=`"$extensionFolder`" --enable-features=AllowLegacyExtensionManifestV2 --disable-features=ExtensionManifestV2DeprecationWarning,ExtensionManifestV2DeprecationDisabled,ExtensionManifestV2DeprecationUnsupported"
     Start-Process $chromePath -ArgumentList $launchArgs
 } else {
-    Write-Host "無法找到 Chrome 執行檔，請手動啟動 Chrome。" -ForegroundColor Red
+    Write-Host "無法找到 Chrome 執行檔，請手動啟動 Chrome" -ForegroundColor Red
 }
 
-Write-Host "`n安裝完成！uBlock Origin 現已安裝並啟用。" -ForegroundColor Green
-pause
+Write-Host "`nuBlock Origin 安裝完成！" -ForegroundColor Green
+Write-Host "若 Chrome 有更新，可能需要重新執行此腳本" -ForegroundColor Yellow
